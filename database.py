@@ -1,62 +1,41 @@
-from database import DatabaseConfig, DatabaseConnection
-from migrations import MigrationManager
-from repository import FlightRepository
-from service import FlightService
-from fastapi import FastAPI, HTTPException
-from flight import Flight
+import psycopg2
 
-#Initialize
-## DB config
-db_config= DatabaseConfig(
-    'flightsdb',
-    'postgres',
-    'postgres',
-    '123Secret_a',
-    5432
-)
-db_connection = DatabaseConnection(db_config)
-## Migrations
-migration_manager = MigrationManager(db_config)
-migration_manager.create_tables()
-# Repository and Service
-repository = FlightRepository(db_connection)
-service = FlightService(repository)
+class DatabaseConfig:
+    '''Класс конфигурации БД'''
+    def __init__(self,
+                 database: str = "", 
+                 host: str="", 
+                 user:str = "", 
+                 password:str = "",
+                 port:int="5432"):
+        self.host=host,
+        self.database=database,
+        self.user=user,
+        self.password=password,
+        self.port=port
 
-app = FastAPI(
-    title="Flight API"
-)
+    def get_connection_params(self):
+        return{
+            'host':self.host[0],
+            'database':self.database[0],
+            'user':self.user[0],
+            'password':self.password[0],
+            'port':self.port
+        }
+    
+class DatabaseConnection:
+    '''Класс подключения к БД'''
 
-@app.get("/")
-async def root():
-    return {"message":"Hello from FastAPI"}
+    def __init__(self, config:DatabaseConfig):
+        self.config = config
+        self._connection = None
+    
+    def get_connection(self):
+        if self._connection is None or self._connection.closed:
+            print(self.config.get_connection_params())
+            self._connection = psycopg2.connect(**self.config.get_connection_params())
+        return self._connection
 
-@app.get("/flights")
-async def get_flights():
-    try:
-        return service.get_all()
-    except Exception as e:
-        return HTTPException(status_code=500, detail=f"Ошибка при получении полётов: {str(e)}")
-
-@app.post("/flights")
-async def create_flight(flight_data: dict):
-    try:
-        #Validation
-        required_fields = ["price","plane"]
-        for field in required_fields:
-            if field not in flight_data:
-                raise HTTPException(status_code=400,detail=f"Отсутствует обязательное поле {field}")
-        
-        flight = Flight(
-            price=flight_data['price'],
-            plane=flight_data['plane']
-        )
-
-        created_flight = service.create_flight(flight)
-        return created_flight
-
-    except Exception as e:
-        return HTTPException(status_code=500, detail=f"Ошибка при добавлении полёта: {str(e)}")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app,host="0.0.0.0", port=8080)
+    def close_connection(self):
+        if self._connection and not self._connection.closed:
+            self._connection.close()
